@@ -1,80 +1,195 @@
-import { Tree, TreeItem, TreeItemLayout, type TreeItemOpenChangeData, mergeClasses } from '@fluentui/react-components';
-import type { SchemaNodeExtended } from '@microsoft/logic-apps-shared';
-import { useCallback, useLayoutEffect, useRef } from 'react';
+import {
+  Caption2,
+  Tree,
+  TreeItem,
+  TreeItemLayout,
+  type TreeItemOpenChangeData,
+  type TreeItemOpenChangeEvent,
+  mergeClasses,
+} from '@fluentui/react-components';
+import { SchemaType, type SchemaNodeExtended } from '@microsoft/logic-apps-shared';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStyles } from './styles';
-import type { Node } from '@xyflow/react';
 import useNodePosition from './useNodePosition';
 import { getReactFlowNodeId } from '../../../utils/Schema.Utils';
+import useOnScreen from './useOnScreen';
+import { applyNodeChanges, useNodes, type Node } from '@xyflow/react';
+import { useDispatch, useSelector } from 'react-redux';
+import type { AppDispatch, RootState } from '../../../core/state/Store';
+import { setSelectedItem, toggleNodeExpandCollapse, updateReactFlowNode } from '../../../core/state/DataMapSlice';
+import { iconForNormalizedDataType } from '../../../utils/Icon.Utils';
+import { addReactFlowPrefix, addSourceReactFlowPrefix, addTargetReactFlowPrefix } from '../../../utils/ReactFlow.Util';
 
 type RecursiveTreeProps = {
   root: SchemaNodeExtended;
   isLeftDirection: boolean;
-  openKeys: Set<string>;
-  setOpenKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
   flattenedScehmaMap: Record<string, SchemaNodeExtended>;
-  setUpdatedNode: (node: Node) => void;
+  treePositionX?: number;
+  treePositionY?: number;
 };
 
 const RecursiveTree = (props: RecursiveTreeProps) => {
-  const { root, isLeftDirection, openKeys, setOpenKeys, flattenedScehmaMap, setUpdatedNode } = props;
+  const { root, isLeftDirection, flattenedScehmaMap, treePositionX, treePositionY } = props;
   const { key } = root;
+  const nodeVisble = useMemo(() => !!flattenedScehmaMap[key], [flattenedScehmaMap, key]);
   const nodeRef = useRef<HTMLDivElement | null>(null);
   const styles = useStyles();
+  const onScreen = useOnScreen(nodeRef);
+  const nodes = useNodes();
+  const dispatch = useDispatch<AppDispatch>();
+  const { sourceOpenKeys, targetOpenKeys } = useSelector((state: RootState) => state.dataMap.present.curDataMapOperation);
+  const [isHover, setIsHover] = useState<boolean>(false);
+  const activeNode = useSelector(
+    (state: RootState) =>
+      state.dataMap.present.curDataMapOperation.selectedItemConnectedNodes[
+        isLeftDirection ? addSourceReactFlowPrefix(key) : addTargetReactFlowPrefix(key)
+      ]
+  );
 
   const {
     position: { x, y } = { x: undefined, y: undefined },
   } = useNodePosition({
     key: key,
-    openKeys: openKeys,
+    onScreen: onScreen,
     schemaMap: flattenedScehmaMap,
     isLeftDirection: isLeftDirection,
-    nodeX: nodeRef.current?.getBoundingClientRect().x,
-    nodeY: nodeRef.current?.getBoundingClientRect().y,
+    nodePositionX: nodeRef?.current?.getBoundingClientRect().x,
+    nodePositionY: nodeRef?.current?.getBoundingClientRect().y,
+    treePositionX,
+    treePositionY,
   });
 
+  const nodeId = useMemo(() => getReactFlowNodeId(key, isLeftDirection), [key, isLeftDirection]);
+
+  const onClick = useCallback(() => {
+    dispatch(setSelectedItem(addReactFlowPrefix(key, isLeftDirection ? SchemaType.Source : SchemaType.Target)));
+  }, [key, isLeftDirection, dispatch]);
+
   const onOpenChange = useCallback(
-    (_e: any, data: TreeItemOpenChangeData) => {
-      setOpenKeys((prev) => {
-        const newOpenKeys = new Set(prev);
-        const value = data.value as string;
-        if (newOpenKeys.has(value)) {
-          newOpenKeys.delete(value);
-        } else {
-          newOpenKeys.add(value);
-        }
-        return newOpenKeys;
-      });
+    (_e: TreeItemOpenChangeEvent, data: TreeItemOpenChangeData) => {
+      const key = data.value as string;
+      const isExpaned = data.open;
+      dispatch(
+        toggleNodeExpandCollapse({
+          isSourceSchema: isLeftDirection,
+          keys: [key],
+          isExpanded: isExpaned,
+        })
+      );
+
+      onClick();
     },
-    [setOpenKeys]
+    [dispatch, isLeftDirection, onClick]
   );
 
+  const aside = useMemo(() => (isHover || activeNode ? <TypeAnnotation schemaNode={root} /> : <div />), [isHover, activeNode, root]);
+
   useLayoutEffect(() => {
-    const nodeId = getReactFlowNodeId(root.key, isLeftDirection);
+    return () => {
+      dispatch(
+        updateReactFlowNode({
+          removeNode: true,
+          isSource: isLeftDirection,
+          id: nodeId,
+        })
+      );
+    };
+  }, [isLeftDirection, dispatch, nodeId]);
+
+  useLayoutEffect(() => {
     if (x !== undefined && y !== undefined) {
-      setUpdatedNode({
+      const updatedNode: Node = {
         id: nodeId,
-        selectable: true,
+        selectable: false,
+        draggable: false,
         data: {
           ...root,
           isLeftDirection: isLeftDirection,
         },
         type: 'schemaNode',
         position: { x, y },
-      });
+      };
+
+      const currentNode = nodes.find((node) => node.id === nodeId);
+
+      if (currentNode) {
+        if (x < 0 || y < 0) {
+          applyNodeChanges([{ type: 'remove', id: nodeId }], nodes);
+          dispatch(
+            updateReactFlowNode({
+              removeNode: true,
+              id: nodeId,
+              isSource: isLeftDirection,
+              node: updatedNode,
+            })
+          );
+        } else if (x >= 0 && y >= 0 && (x !== currentNode.position.x || y !== currentNode.position.y)) {
+          applyNodeChanges([{ type: 'position', id: nodeId, position: updatedNode.position }], nodes);
+          dispatch(
+            updateReactFlowNode({
+              isSource: isLeftDirection,
+              id: nodeId,
+              node: updatedNode,
+            })
+          );
+        }
+      } else if (x >= 0 && y >= 0) {
+        applyNodeChanges([{ type: 'add', item: updatedNode }], nodes);
+        dispatch(
+          updateReactFlowNode({
+            isSource: isLeftDirection,
+            id: nodeId,
+            node: updatedNode,
+          })
+        );
+      }
     }
-  }, [isLeftDirection, x, y, root, setUpdatedNode]);
+  }, [nodes, isLeftDirection, x, y, root, nodeId, dispatch]);
+
+  if (!nodeVisble) {
+    return null;
+  }
 
   if (root.children.length === 0) {
+    let style = styles.leafNode;
+    style = mergeClasses(style, isLeftDirection ? '' : styles.rightTreeItemLayout);
+    style = mergeClasses(style, activeNode ? styles.nodeSelected : '');
+
     return (
       <TreeItem itemType="leaf" id={key} value={key} ref={nodeRef}>
-        <TreeItemLayout className={isLeftDirection ? '' : styles.rightTreeItemLayout}>{root.name}</TreeItemLayout>
+        <TreeItemLayout
+          onClick={onClick}
+          onMouseOver={() => setIsHover(true)}
+          onMouseLeave={() => setIsHover(false)}
+          className={style}
+          aside={aside}
+        >
+          {root.name}
+        </TreeItemLayout>
       </TreeItem>
     );
   }
 
+  let style = styles.rootNode;
+  style = mergeClasses(style, isLeftDirection ? '' : styles.rightTreeItemLayout);
+  style = mergeClasses(style, activeNode ? styles.nodeSelected : '');
+
   return (
-    <TreeItem itemType="branch" id={key} value={key} ref={nodeRef} open={openKeys.has(key)} onOpenChange={onOpenChange}>
-      <TreeItemLayout className={mergeClasses(styles.rootNode, isLeftDirection ? '' : styles.rightTreeItemLayout)}>
+    <TreeItem
+      itemType="branch"
+      id={key}
+      value={key}
+      ref={nodeRef}
+      open={isLeftDirection ? sourceOpenKeys[key] : targetOpenKeys[key]}
+      onOpenChange={onOpenChange}
+    >
+      <TreeItemLayout
+        onClick={onClick}
+        onMouseOver={() => setIsHover(true)}
+        onMouseLeave={() => setIsHover(false)}
+        aside={aside}
+        className={style}
+      >
         {root.name}
       </TreeItemLayout>
       <Tree aria-label="sub-tree">
@@ -83,10 +198,9 @@ const RecursiveTree = (props: RecursiveTreeProps) => {
             <RecursiveTree
               root={child}
               isLeftDirection={isLeftDirection}
-              openKeys={openKeys}
-              setOpenKeys={setOpenKeys}
               flattenedScehmaMap={flattenedScehmaMap}
-              setUpdatedNode={setUpdatedNode}
+              treePositionX={treePositionX}
+              treePositionY={treePositionY}
             />
           </span>
         ))}
@@ -95,3 +209,15 @@ const RecursiveTree = (props: RecursiveTreeProps) => {
   );
 };
 export default RecursiveTree;
+
+const TypeAnnotation = (props: { schemaNode: SchemaNodeExtended }) => {
+  const styles = useStyles();
+  const TypeIcon = iconForNormalizedDataType(props.schemaNode.type, 16, true, props.schemaNode.nodeProperties);
+
+  return (
+    <div className={styles.typeAnnotation}>
+      <TypeIcon filled={true} style={{ paddingRight: '3px' }} />
+      <Caption2>{props.schemaNode.type}</Caption2>
+    </div>
+  );
+};

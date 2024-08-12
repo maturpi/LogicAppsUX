@@ -1,6 +1,6 @@
 import { type Template, isArmResourceId, getIntl } from '@microsoft/logic-apps-shared';
 import type { AppDispatch } from '../../../core';
-import { overviewTab } from '../../../ui/panel/templatePanel/quickViewPanel/tabs/overviewTab';
+import { summaryTab } from '../../../ui/panel/templatePanel/quickViewPanel/tabs/summaryTab';
 import { workflowTab } from '../../../ui/panel/templatePanel/quickViewPanel/tabs/workflowTab';
 import type { IntlShape } from 'react-intl';
 import type { FilterObject } from '@microsoft/designer-ui';
@@ -8,7 +8,7 @@ import Fuse from 'fuse.js';
 import { validateParameterValueWithSwaggerType } from '../../../core/utils/validation';
 
 export const getQuickViewTabs = (intl: IntlShape, dispatch: AppDispatch) => {
-  return [workflowTab(intl, dispatch), overviewTab(intl, dispatch)];
+  return [workflowTab(intl, dispatch), summaryTab(intl, dispatch)];
 };
 
 export const getUniqueConnectors = (
@@ -112,7 +112,8 @@ export const getFilteredTemplates = (
     const hasConnectors =
       filters?.connectors?.some((connector) =>
         Object.values(templateManifest.connections)?.some(
-          (connection) => connector.value === connection.connectorId.split('/').slice(-1)[0]
+          (connection) =>
+            connector.value.split('/').slice(-1)[0].toLowerCase() === connection.connectorId.split('/').slice(-1)[0].toLowerCase()
         )
       ) ?? true;
 
@@ -164,8 +165,8 @@ export const getConnectorResources = (intl: IntlShape) => {
       description: 'Connected text',
     }),
     notConnected: intl.formatMessage({
-      defaultMessage: 'Not Connected',
-      id: '3HrFPS',
+      defaultMessage: 'Not connected',
+      id: 'WxJJcQ',
       description: 'Not Connected text',
     }),
   };

@@ -7,16 +7,20 @@ import type { ConnectionMapping } from '../../core/state/templates/workflowSlice
 import { EmptySearch } from '@microsoft/designer-ui';
 import { Text } from '@fluentui/react-components';
 import { useIntl } from 'react-intl';
+import { TemplateFilters, type TemplateDetailFilterType } from './filters/templateFilters';
 
 export const TemplatesDesigner = ({
+  detailFilters,
   createWorkflowCall,
 }: {
+  detailFilters: TemplateDetailFilterType;
   createWorkflowCall: (
     workflowName: string,
     workflowKind: string,
     workflow: LogicAppsV2.WorkflowDefinition,
     connectionsMapping: ConnectionMapping,
-    parametersData: Record<string, Template.ParameterDefinition>
+    parametersData: Record<string, Template.ParameterDefinition>,
+    onSuccessfulCreation: () => void
   ) => Promise<void>;
 }) => {
   const intl = useIntl();
@@ -43,7 +47,7 @@ export const TemplatesDesigner = ({
     }),
   };
 
-  const onCreateClick = async () => {
+  const onCreateClick = async (onSuccessfulCreation: () => void) => {
     const workflowNameToUse = existingWorkflowName ?? workflowName;
     if (
       !workflowNameToUse ||
@@ -58,11 +62,13 @@ export const TemplatesDesigner = ({
       console.log('Error checking conditions before calling createWorkflowCall');
       return;
     }
-    await createWorkflowCall(workflowNameToUse, kind, workflowDefinition, connections, parameterDefinitions);
+    await createWorkflowCall(workflowNameToUse, kind, workflowDefinition, connections, parameterDefinitions, onSuccessfulCreation);
   };
 
   return (
     <>
+      <TemplateFilters detailFilters={detailFilters} />
+      <br />
       <TemplatePanel onCreateClick={onCreateClick} />
       {filteredTemplateNames && filteredTemplateNames?.length > 0 ? (
         <div className="msla-templates-list">

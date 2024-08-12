@@ -17,6 +17,7 @@ import {
   DevLogger,
   InitLoggerService,
   InitOperationManifestService,
+  InitUiInteractionsService,
 } from '@microsoft/logic-apps-shared';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
@@ -78,6 +79,7 @@ export const initializeTemplateServices = createAsyncThunk(
     connectionParameterEditorService,
     templateService,
     loggerService,
+    uiInteractionsService,
   }: TemplateServiceOptions) => {
     InitConnectionService(connectionService);
     InitOperationManifestService(operationManifestService);
@@ -113,6 +115,10 @@ export const initializeTemplateServices = createAsyncThunk(
     }
     if (templateService) {
       InitTemplateService(templateService);
+    }
+
+    if (uiInteractionsService) {
+      InitUiInteractionsService(uiInteractionsService);
     }
 
     return true;
@@ -284,6 +290,13 @@ const loadTemplateFromGithub = async (templateName: string, manifest: Template.M
     const templateManifest: Template.Manifest =
       manifest ?? (await import(`./../../templates/templateFiles/${templateName}/manifest.json`)).default;
 
+    const imagesWithPaths: Record<string, string> = {};
+    for (const imageType of Object.keys(templateManifest.images)) {
+      imagesWithPaths[imageType] = (
+        await import(`./../../templates/templateFiles/${templateName}/${templateManifest.images[imageType]}.png`)
+      ).default;
+    }
+
     const parametersDefinitions = templateManifest.parameters?.reduce((result: Record<string, Template.ParameterDefinition>, parameter) => {
       result[parameter.name] = {
         ...parameter,
@@ -299,7 +312,7 @@ const loadTemplateFromGithub = async (templateName: string, manifest: Template.M
       kind: templateManifest.kinds?.length === 1 ? templateManifest.kinds[0] : undefined,
       parameterDefinitions: parametersDefinitions,
       connections: templateManifest.connections,
-      images: templateManifest.images,
+      images: imagesWithPaths,
       errors: {
         workflow: undefined,
         kind: undefined,
